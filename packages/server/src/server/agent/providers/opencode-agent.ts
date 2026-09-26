@@ -1467,6 +1467,7 @@ export class OpenCodeAgentClient implements AgentClient {
         client.session.create({
           directory: openCodeConfig.cwd,
           ...(permission ? { permission } : {}),
+          ...(openCodeConfig.title ? { title: openCodeConfig.title } : {}),
         }),
         OPENCODE_SERVER_STARTUP_TIMEOUT_MS,
         `OpenCode session.create timed out after ${Math.round(

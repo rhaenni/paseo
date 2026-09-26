@@ -1270,6 +1270,13 @@ export class AgentManager {
       { reason: "create", purpose: "interactive", workspaceId: options.workspaceId ?? null },
     );
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
+    // Joyful fork: Paseo already has the explicit/provisional title at this
+    // point but normally applies it to its own agent record only after the
+    // provider session exists. Make it available to providers during native
+    // session creation as well (for example OpenCode session titles).
+    if (!providerLaunchConfig.title && options.initialTitle) {
+      providerLaunchConfig.title = options.initialTitle;
+    }
     const createOptions = this.buildCreateSessionOptions(options);
     const session = await client.createSession(providerLaunchConfig, launchContext, createOptions);
     await this.requireExternalMcpSupport(session, storedConfig);

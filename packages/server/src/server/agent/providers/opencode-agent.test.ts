@@ -354,6 +354,33 @@ describe("OpenCodeAgentClient adapter smoke tests", () => {
     rmSync(cwd, { recursive: true, force: true });
   }, 60_000);
 
+  // Joyful fork regression: the resolved agent title must reach the provider's
+  // native session creation, not only Paseo's own agent record.
+  test("passes the resolved title to OpenCode session creation", async () => {
+    const cwd = tmpCwd();
+    const runtime = new TestOpenCodeHarness();
+    const openCode = new TestOpenCodeClient();
+    runtime.enqueueClient(openCode);
+    const client = new OpenCodeAgentClient(logger, undefined, {
+      serverManager: runtime,
+      createClient: runtime.createClient,
+    });
+    const session = await client.createSession({
+      ...buildConfig(cwd),
+      title: "Fix deployed power aggregation",
+    });
+
+    expect(openCode.calls.sessionCreate).toEqual([
+      expect.objectContaining({
+        directory: cwd,
+        title: "Fix deployed power aggregation",
+      }),
+    ]);
+
+    await session.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }, 60_000);
+
   test("creates a session when session.create needs more than ten seconds", async () => {
     vi.useFakeTimers();
     const cwd = tmpCwd();
