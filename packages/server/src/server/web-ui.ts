@@ -40,7 +40,9 @@ function getContentType(filePath: string): string {
   return CONTENT_TYPES[ext] ?? "application/octet-stream";
 }
 
-function selectEncoding(acceptEncoding: string | undefined): "br" | "gzip" | null {
+function selectEncoding(
+  acceptEncoding: string | undefined,
+): "br" | "gzip" | null {
   if (!acceptEncoding) {
     return null;
   }
@@ -63,7 +65,10 @@ function isHashedAsset(filePath: string): boolean {
 function isInsideDir(targetPath: string, dirPath: string): boolean {
   const resolvedDir = path.resolve(dirPath);
   const resolvedTarget = path.resolve(targetPath);
-  return resolvedTarget === resolvedDir || resolvedTarget.startsWith(resolvedDir + path.sep);
+  return (
+    resolvedTarget === resolvedDir ||
+    resolvedTarget.startsWith(resolvedDir + path.sep)
+  );
 }
 
 interface ResolvedTarget {
@@ -71,7 +76,10 @@ interface ResolvedTarget {
   isIndexHtml: boolean;
 }
 
-function resolveTargetFile(distDir: string, requestPath: string): ResolvedTarget | null {
+function resolveTargetFile(
+  distDir: string,
+  requestPath: string,
+): ResolvedTarget | null {
   const safePath = path.normalize(requestPath).replace(/^(\.\.[/\\])+/, "");
   let filePath = path.join(distDir, safePath);
 
@@ -94,7 +102,8 @@ function resolveTargetFile(distDir: string, requestPath: string): ResolvedTarget
   }
 
   const resolvedFile = path.resolve(filePath);
-  const isIndexHtml = path.basename(resolvedFile).toLowerCase() === "index.html";
+  const isIndexHtml =
+    path.basename(resolvedFile).toLowerCase() === "index.html";
   return { resolvedFile, isIndexHtml };
 }
 
@@ -127,9 +136,16 @@ function resolveContentEncoding(
   return { finalFile: resolvedFile, contentEncoding: null };
 }
 
-function setResponseCacheHeaders(res: Response, isIndexHtml: boolean, resolvedFile: string): void {
+function setResponseCacheHeaders(
+  res: Response,
+  isIndexHtml: boolean,
+  resolvedFile: string,
+): void {
   if (isIndexHtml) {
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader(
+      "Cache-Control",
+      "no-store, no-cache, must-revalidate, proxy-revalidate",
+    );
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
   } else if (isHashedAsset(resolvedFile)) {
@@ -143,11 +159,14 @@ export interface WebUiMiddlewareOptions {
   enabled: boolean;
   distDir: string | null;
   label: string;
+  serverId?: string;
   logger: Logger;
 }
 
-export function createWebUiMiddleware(options: WebUiMiddlewareOptions): RequestHandler {
-  const { enabled, distDir, label, logger } = options;
+export function createWebUiMiddleware(
+  options: WebUiMiddlewareOptions,
+): RequestHandler {
+  const { enabled, distDir, label, serverId, logger } = options;
   const childLogger = logger.child({ module: "web-ui" });
 
   if (!enabled || !distDir) {
@@ -175,7 +194,14 @@ export function createWebUiMiddleware(options: WebUiMiddlewareOptions): RequestH
       return;
     }
 
-    serveWebUiFile({ distDir, requestPath: req.path, label, req, res });
+    serveWebUiFile({
+      distDir,
+      requestPath: req.path,
+      label,
+      serverId,
+      req,
+      res,
+    });
   };
 }
 
@@ -183,12 +209,13 @@ interface ServeWebUiFileOptions {
   distDir: string;
   requestPath: string;
   label: string;
+  serverId?: string;
   req: Parameters<RequestHandler>[0];
   res: Parameters<RequestHandler>[1];
 }
 
 function serveWebUiFile(options: ServeWebUiFileOptions): void {
-  const { distDir, requestPath, label, req, res } = options;
+  const { distDir, requestPath, label, serverId, req, res } = options;
 
   const target = resolveTargetFile(distDir, requestPath);
   if (!target) {
@@ -197,8 +224,13 @@ function serveWebUiFile(options: ServeWebUiFileOptions): void {
   }
 
   const { resolvedFile, isIndexHtml } = target;
-  const acceptEncoding = isIndexHtml ? undefined : req.headers["accept-encoding"];
-  const { finalFile, contentEncoding } = resolveContentEncoding(resolvedFile, acceptEncoding);
+  const acceptEncoding = isIndexHtml
+    ? undefined
+    : req.headers["accept-encoding"];
+  const { finalFile, contentEncoding } = resolveContentEncoding(
+    resolvedFile,
+    acceptEncoding,
+  );
 
   res.setHeader("Content-Type", getContentType(resolvedFile));
   if (contentEncoding) {
@@ -213,7 +245,7 @@ function serveWebUiFile(options: ServeWebUiFileOptions): void {
   }
 
   if (isIndexHtml) {
-    sendIndexHtml(res, finalFile, req, label);
+    sendIndexHtml(res, finalFile, req, label, serverId);
     return;
   }
 
@@ -233,14 +265,48 @@ function sendIndexHtml(
   filePath: string,
   req: Parameters<RequestHandler>[0],
   label: string,
+  serverId: string | undefined,
 ): void {
   try {
     const html = readFileSync(filePath, "utf-8");
-    const injected = injectConnectionHint(html, req, label);
+    const injected = injectConnectionHint(html, req, label, serverId);
     res.status(200).send(injected);
   } catch {
     res.status(500).end();
   }
+}
+
+const HOST_REGISTRY_STORAGE_KEY = "@paseo:daemon-registry";
+
+/**
+ * Removes saved hosts that reach `listen` directly but belong to another
+ * server id. Returns null when nothing changes. Runs in the browser via
+ * `toString()`, so it must stay self-contained.
+ */
+export function pruneStaleHosts(
+  registry: unknown,
+  listen: string,
+  serverId: string,
+): unknown[] | null {
+  if (!Array.isArray(registry)) return null;
+  const normalize = (endpoint: unknown) =>
+    String(endpoint)
+      .trim()
+      .toLowerCase()
+      .replace(/^(127\.0\.0\.1|\[::1\])(?=:\d+$)/, "localhost");
+  const target = normalize(listen);
+  const kept = registry.filter(
+    (host: { serverId?: unknown; connections?: unknown } | null) =>
+      !host ||
+      host.serverId === serverId ||
+      !Array.isArray(host.connections) ||
+      !host.connections.some(
+        (connection: { type?: unknown; endpoint?: unknown } | null) =>
+          connection?.type === "directTcp" &&
+          normalize(connection.endpoint) === target,
+      ),
+  );
+  return kept.length === registry.length ? null : kept;
 }
 
 function serializeInlineScriptJson(value: unknown): string {
@@ -254,6 +320,7 @@ function injectConnectionHint(
   html: string,
   req: Parameters<RequestHandler>[0],
   label: string,
+  serverId: string | undefined,
 ): string {
   const host = typeof req.headers.host === "string" ? req.headers.host : "";
   const useTls = req.protocol === "https";
@@ -262,7 +329,15 @@ function injectConnectionHint(
     useTls,
     label,
   };
-  const script = `<script>window.__PASEO_INITIAL_DAEMON_CONNECTION__=${serializeInlineScriptJson(hint)}</script>`;
+  const json = serializeInlineScriptJson(hint);
+  // Joyful fork: the app skips the hint when a saved host already uses this
+  // endpoint, even when that host is an earlier daemon (another server id) that
+  // listened on the same port, which then stays "Offline" forever. Drop such
+  // stale entries before the app reads its registry.
+  const prune = serverId
+    ? `try{var k=${JSON.stringify(HOST_REGISTRY_STORAGE_KEY)},r=JSON.parse(localStorage.getItem(k)||"null"),n=(${pruneStaleHosts.toString()})(r,${json}.listen,${serializeInlineScriptJson(serverId)});if(n)localStorage.setItem(k,JSON.stringify(n))}catch(e){}`
+    : "";
+  const script = `<script>window.__PASEO_INITIAL_DAEMON_CONNECTION__=${json};${prune}</script>`;
   const headClose = /<\/head>/i;
   if (headClose.test(html)) {
     return html.replace(headClose, `${script}</head>`);

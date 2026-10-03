@@ -522,12 +522,18 @@ async function reconcileManagedProcessLedger(
   }
 }
 
-function mountWebUi(app: express.Application, config: PaseoDaemonConfig, logger: Logger): void {
+function mountWebUi(
+  app: express.Application,
+  config: PaseoDaemonConfig,
+  serverId: string,
+  logger: Logger,
+): void {
   app.use(
     createWebUiMiddleware({
       enabled: config.webUi?.enabled ?? false,
       distDir: config.webUi?.distDir ?? null,
       label: getHostName(),
+      serverId,
       logger,
     }),
   );
@@ -781,7 +787,7 @@ export async function createPaseoDaemon(
   // classification and host/CORS handling, but before daemon bearer auth, so
   // static app files load without the daemon password while API/WebSocket calls
   // remain protected.
-  mountWebUi(app, config, logger);
+  mountWebUi(app, config, serverId, logger);
 
   let localCredential: string | null = null;
   const daemonAuth = { ...config.auth, localCredential: () => localCredential };
