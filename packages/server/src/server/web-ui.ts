@@ -277,6 +277,8 @@ function sendIndexHtml(
 }
 
 const HOST_REGISTRY_STORAGE_KEY = "@paseo:daemon-registry";
+const EMBEDDED_SETTINGS_CSS =
+  'div:has(> [data-testid="settings-detail-pane"]) > :not([data-testid="settings-detail-pane"]){display:none!important}';
 
 /**
  * Removes saved hosts that reach `listen` directly but belong to another
@@ -337,7 +339,10 @@ function injectConnectionHint(
   const prune = serverId
     ? `try{var k=${JSON.stringify(HOST_REGISTRY_STORAGE_KEY)},r=JSON.parse(localStorage.getItem(k)||"null"),n=(${pruneStaleHosts.toString()})(r,${json}.listen,${serializeInlineScriptJson(serverId)});if(n)localStorage.setItem(k,JSON.stringify(n))}catch(e){}`
     : "";
-  const script = `<script>window.__PASEO_INITIAL_DAEMON_CONNECTION__=${json};${prune}</script>`;
+  // Joyful fork: embedded in an iframe (Joyful's Settings > Providers), show a
+  // settings page without the settings sidebar next to it.
+  const embedded = `if(window.top!==window.self){var s=document.createElement("style");s.textContent=${JSON.stringify(EMBEDDED_SETTINGS_CSS)};document.head.appendChild(s)}`;
+  const script = `<script>window.__PASEO_INITIAL_DAEMON_CONNECTION__=${json};${prune}${embedded}</script>`;
   const headClose = /<\/head>/i;
   if (headClose.test(html)) {
     return html.replace(headClose, `${script}</head>`);
