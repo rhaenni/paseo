@@ -427,6 +427,18 @@ describe("stale saved host pruning", () => {
     };
     new Function("window", "localStorage", script)({}, localStorage);
     expect(store.get("@paseo:daemon-registry")).toBe("[]");
+    // Embedded in an iframe, the settings sidebar is hidden.
+    const head: { textContent: string }[] = [];
+    const document = {
+      createElement: () => ({ textContent: "" }),
+      head: { appendChild: (node: { textContent: string }) => head.push(node) },
+    };
+    new Function("window", "localStorage", "document", script)(
+      { top: {}, self: {} },
+      localStorage,
+      document,
+    );
+    expect(head[0]?.textContent).toContain("settings-detail-pane");
     await rm(dir, { recursive: true, force: true });
   });
 });
