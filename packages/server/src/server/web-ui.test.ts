@@ -7,7 +7,7 @@ import express from "express";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import pino from "pino";
 
-import { createWebUiMiddleware } from "./web-ui.js";
+import { createWebUiMiddleware, pruneStaleHosts } from "./web-ui.js";
 
 const logger = pino({ level: "silent" });
 
@@ -100,7 +100,9 @@ describe("daemon web UI route module", () => {
     tempRoot = await mkdtemp(path.join(os.tmpdir(), "paseo-web-ui-"));
     distDir = path.join(tempRoot, "dist");
     publicDir = path.join(tempRoot, "public");
-    await mkdir(path.join(distDir, "_expo", "static", "js", "web"), { recursive: true });
+    await mkdir(path.join(distDir, "_expo", "static", "js", "web"), {
+      recursive: true,
+    });
     await mkdir(publicDir, { recursive: true });
 
     await writeFile(
@@ -108,15 +110,36 @@ describe("daemon web UI route module", () => {
       "<!DOCTYPE html><html><head></head><body>app</body></html>",
     );
     await writeFile(
-      path.join(distDir, "_expo", "static", "js", "web", "index-abc123def4567890.js"),
+      path.join(
+        distDir,
+        "_expo",
+        "static",
+        "js",
+        "web",
+        "index-abc123def4567890.js",
+      ),
       "console.log('uncompressed');",
     );
     await writeFile(
-      path.join(distDir, "_expo", "static", "js", "web", "index-abc123def4567890.js.br"),
+      path.join(
+        distDir,
+        "_expo",
+        "static",
+        "js",
+        "web",
+        "index-abc123def4567890.js.br",
+      ),
       "console.log('brotli');",
     );
     await writeFile(
-      path.join(distDir, "_expo", "static", "js", "web", "index-abc123def4567890.js.gz"),
+      path.join(
+        distDir,
+        "_expo",
+        "static",
+        "js",
+        "web",
+        "index-abc123def4567890.js.gz",
+      ),
       "console.log('gzip');",
     );
     await writeFile(path.join(distDir, "styles.css"), "body { color: red; }");
@@ -137,7 +160,11 @@ describe("daemon web UI route module", () => {
   });
 
   test("returns 404 when dist directory is missing", async () => {
-    const app = createApp({ enabled: true, distDir: path.join(tempRoot, "missing"), publicDir });
+    const app = createApp({
+      enabled: true,
+      distDir: path.join(tempRoot, "missing"),
+      publicDir,
+    });
 
     const res = await request(app, "GET", "/");
 
@@ -162,7 +189,9 @@ describe("daemon web UI route module", () => {
 
     const res = await request(app, "GET", "/index.html");
 
-    expect(res.body).toMatch(/window\.__PASEO_INITIAL_DAEMON_CONNECTION__.*<\/head>/);
+    expect(res.body).toMatch(
+      /window\.__PASEO_INITIAL_DAEMON_CONNECTION__.*<\/head>/,
+    );
   });
 
   test("escapes the injected host hint for inline script safety", async () => {
@@ -200,9 +229,14 @@ describe("daemon web UI route module", () => {
   test("selects brotli precompressed asset when accepted", async () => {
     const app = createApp({ enabled: true, distDir, publicDir });
 
-    const res = await request(app, "GET", "/_expo/static/js/web/index-abc123def4567890.js", {
-      "accept-encoding": "br, gzip",
-    });
+    const res = await request(
+      app,
+      "GET",
+      "/_expo/static/js/web/index-abc123def4567890.js",
+      {
+        "accept-encoding": "br, gzip",
+      },
+    );
 
     expect(res.status).toBe(200);
     expect(res.headers["content-encoding"]).toBe("br");
@@ -213,9 +247,14 @@ describe("daemon web UI route module", () => {
   test("selects gzip precompressed asset when brotli is not accepted", async () => {
     const app = createApp({ enabled: true, distDir, publicDir });
 
-    const res = await request(app, "GET", "/_expo/static/js/web/index-abc123def4567890.js", {
-      "accept-encoding": "gzip",
-    });
+    const res = await request(
+      app,
+      "GET",
+      "/_expo/static/js/web/index-abc123def4567890.js",
+      {
+        "accept-encoding": "gzip",
+      },
+    );
 
     expect(res.status).toBe(200);
     expect(res.headers["content-encoding"]).toBe("gzip");
@@ -225,7 +264,11 @@ describe("daemon web UI route module", () => {
   test("falls back to uncompressed asset when no encoding is accepted", async () => {
     const app = createApp({ enabled: true, distDir, publicDir });
 
-    const res = await request(app, "GET", "/_expo/static/js/web/index-abc123def4567890.js");
+    const res = await request(
+      app,
+      "GET",
+      "/_expo/static/js/web/index-abc123def4567890.js",
+    );
 
     expect(res.status).toBe(200);
     expect(res.headers["content-encoding"]).toBeUndefined();
@@ -272,9 +315,15 @@ describe("daemon web UI route module", () => {
   test("sets immutable caching for hashed assets", async () => {
     const app = createApp({ enabled: true, distDir, publicDir });
 
-    const res = await request(app, "GET", "/_expo/static/js/web/index-abc123def4567890.js");
+    const res = await request(
+      app,
+      "GET",
+      "/_expo/static/js/web/index-abc123def4567890.js",
+    );
 
-    expect(res.headers["cache-control"]).toBe("public, max-age=31536000, immutable");
+    expect(res.headers["cache-control"]).toBe(
+      "public, max-age=31536000, immutable",
+    );
   });
 
   test("sets no-cache for unhashed static assets", async () => {
@@ -302,5 +351,82 @@ describe("daemon web UI route module", () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toBe("");
+  });
+});
+
+// Joyful fork regression: an earlier daemon on the same port must not keep the
+// app on its stale (offline) host profile.
+describe("stale saved host pruning", () => {
+  test("drops saved hosts that reach this endpoint under another server id", () => {
+    const registry = [
+      {
+        serverId: "srv_old",
+        connections: [{ type: "directTcp", endpoint: "localhost:6768" }],
+      },
+      {
+        serverId: "srv_new",
+        connections: [{ type: "directTcp", endpoint: "localhost:6768" }],
+      },
+      {
+        serverId: "srv_other",
+        connections: [{ type: "directTcp", endpoint: "localhost:7000" }],
+      },
+      {
+        serverId: "srv_relay",
+        connections: [{ type: "relay", relayEndpoint: "relay.test:443" }],
+      },
+    ];
+    expect(pruneStaleHosts(registry, "127.0.0.1:6768", "srv_new")).toEqual(
+      registry.slice(1),
+    );
+    expect(
+      pruneStaleHosts(registry.slice(1), "127.0.0.1:6768", "srv_new"),
+    ).toBeNull();
+    expect(pruneStaleHosts(null, "127.0.0.1:6768", "srv_new")).toBeNull();
+  });
+
+  test("the injected script rewrites the registry in the browser", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "paseo-web-ui-prune-"));
+    await writeFile(
+      path.join(dir, "index.html"),
+      "<html><head></head><body></body></html>",
+    );
+    const app = express();
+    app.use(
+      createWebUiMiddleware({
+        enabled: true,
+        distDir: dir,
+        label: "x",
+        serverId: "srv_new",
+        logger,
+      }),
+    );
+    const res = await request(app, "GET", "/");
+    const script = /<script>([\s\S]*?)<\/script>/.exec(res.body)?.[1] ?? "";
+    const store = new Map([
+      [
+        "@paseo:daemon-registry",
+        JSON.stringify([
+          {
+            serverId: "srv_old",
+            connections: [
+              {
+                type: "directTcp",
+                endpoint:
+                  "localhost:" +
+                  /"listen":"localhost:(\d+)"/.exec(res.body)?.[1],
+              },
+            ],
+          },
+        ]),
+      ],
+    ]);
+    const localStorage = {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => store.set(key, value),
+    };
+    new Function("window", "localStorage", script)({}, localStorage);
+    expect(store.get("@paseo:daemon-registry")).toBe("[]");
+    await rm(dir, { recursive: true, force: true });
   });
 });
