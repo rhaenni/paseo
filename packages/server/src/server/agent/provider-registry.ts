@@ -629,14 +629,21 @@ function createRegistryEntry(
     ? profileModels.map((model) => mapModel(provider, model))
     : [];
 
+  // Live catalogs (Claude's mode catalog among them) carry no presentation
+  // or `isUnattended`: take both from the provider definition. Without
+  // `isUnattended` an unattended create cannot find the provider's no-prompt
+  // mode and falls back to the provider default (Claude: "Always Ask").
   const decorateModes = (modes: AgentMode[]): AgentMode[] =>
     modes.map((mode) => {
-      if (mode.icon && mode.colorTier) return mode;
       const definitionMode = resolved.definition.modes.find((d) => d.id === mode.id);
       if (!definitionMode) return mode;
+      if (mode.icon && mode.colorTier && (mode.isUnattended || !definitionMode.isUnattended)) {
+        return mode;
+      }
       return Object.assign({}, mode, {
         icon: mode.icon ?? definitionMode.icon,
         colorTier: mode.colorTier ?? definitionMode.colorTier,
+        ...(definitionMode.isUnattended ? { isUnattended: true } : {}),
       });
     });
 
