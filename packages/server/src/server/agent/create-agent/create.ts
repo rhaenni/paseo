@@ -57,6 +57,7 @@ export interface CreateAgentFromSessionInput {
   attachments?: AgentAttachment[];
   labels: Record<string, string>;
   env?: Record<string, string>;
+  unattended?: boolean;
   provisionalTitle: string | null;
   firstAgentContext: FirstAgentContext;
 }
@@ -225,7 +226,7 @@ async function resolveSessionCreateAgent(
     requestedMode: builtSessionConfig.modeId,
     featureValues: builtSessionConfig.featureValues,
     parent: null,
-    unattended: false,
+    unattended: input.unattended ?? false,
   });
   const sessionConfig: AgentSessionConfig = {
     ...builtSessionConfig,

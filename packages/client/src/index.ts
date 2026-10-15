@@ -265,6 +265,8 @@ export interface PaseoAgentCreateOptions {
   autoArchive?: CreateAgentRequestMessage["autoArchive"];
   /** Visibility intent for a NEW workspace. Existing targets reject this option. */
   background?: CreateAgentRequestMessage["background"];
+  /** Use the provider's unattended mode when `config.modeId` is unset. */
+  unattended?: CreateAgentRequestMessage["unattended"];
   requestId?: string;
   labels?: Record<string, string>;
 }

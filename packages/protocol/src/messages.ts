@@ -1755,6 +1755,9 @@ export const CreateAgentRequestMessageSchema = z.object({
   internal: z.boolean().optional(),
   // Workspace creation intent, rejected when selecting an existing workspace.
   background: z.boolean().optional(),
+  // Request the provider's unattended mode (no permission prompts) when no
+  // explicit `config.modeId` is given. An explicit mode always wins.
+  unattended: z.boolean().optional(),
   labels: z.record(z.string(), z.string()).default({}),
   requestId: z.string(),
 });
