@@ -1769,6 +1769,30 @@ describe("fetchCatalog", () => {
     expect(catalog.modes).toEqual(injectedModes);
   });
 
+  test("marks the provider definition's unattended mode on a live catalog", async () => {
+    const injectedClient = {
+      provider: "claude",
+      capabilities: {},
+      fetchCatalog: vi.fn(async () => ({
+        models: [{ provider: "claude", id: "claude-opus", label: "Opus" }],
+        modes: [
+          { id: "default", label: "Always Ask" },
+          { id: "bypassPermissions", label: "Bypass" },
+        ],
+      })),
+      isAvailable: vi.fn(async () => true),
+    } satisfies Partial<AgentClient> as AgentClient;
+
+    const registry = buildProviderRegistry(logger);
+    const catalog = await registry.claude.fetchCatalog(
+      { cwd: "/tmp/catalog", force: false },
+      injectedClient,
+    );
+
+    expect(catalog.modes.find((mode) => mode.id === "bypassPermissions")?.isUnattended).toBe(true);
+    expect(catalog.modes.find((mode) => mode.id === "default")?.isUnattended).toBeUndefined();
+  });
+
   test("uses injected client fetchCatalog when available", async () => {
     const injectedClient = {
       provider: "codex",
