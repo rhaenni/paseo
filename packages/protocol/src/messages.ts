@@ -1710,6 +1710,9 @@ export const CreateAgentRequestMessageSchema = z.object({
   git: GitSetupOptionsSchema.optional(),
   worktree: CreateAgentWorktreeTargetSchema.optional(),
   autoArchive: z.boolean().optional(),
+  // Request the provider's unattended mode (no permission prompts) when no
+  // explicit `config.modeId` is given. An explicit mode always wins.
+  unattended: z.boolean().optional(),
   labels: z.record(z.string(), z.string()).default({}),
   requestId: z.string(),
 });

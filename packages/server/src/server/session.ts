@@ -4225,6 +4225,7 @@ export class Session {
       images,
       attachments,
       env,
+      unattended,
     } = msg;
     this.sessionLogger.info(
       { cwd: config.cwd, provider: config.provider, worktreeName },
@@ -4297,6 +4298,7 @@ export class Session {
           git,
           labels: resolvedIntent.intent.labels,
           env,
+          unattended,
           provisionalTitle,
           firstAgentContext,
           buildSessionConfig: (sessionConfig, gitOptions, legacyWorktreeName, ctx) =>

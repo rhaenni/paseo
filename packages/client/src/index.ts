@@ -257,6 +257,8 @@ export interface PaseoAgentCreateOptions {
   git?: CreateAgentRequestMessage["git"];
   worktree?: CreateAgentRequestMessage["worktree"];
   autoArchive?: CreateAgentRequestMessage["autoArchive"];
+  /** Use the provider's unattended mode when `config.modeId` is unset. */
+  unattended?: CreateAgentRequestMessage["unattended"];
   requestId?: string;
   labels?: Record<string, string>;
 }
