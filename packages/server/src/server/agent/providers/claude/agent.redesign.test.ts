@@ -656,6 +656,48 @@ test("captures session IDs from fixture-driven init message variants", async () 
   );
 });
 
+test("emits each streamed block once when Claude delivers the finished message block by block", async () => {
+  const session = await createSession();
+  const internal: {
+    timelineAssembler: {
+      consume: (input: {
+        message: Record<string, unknown>;
+        runId: string | null;
+      }) => AgentTimelineItem[];
+    };
+  } = asInternals(session);
+  const consume = (message: Record<string, unknown>) =>
+    internal.timelineAssembler.consume({ message, runId: "run-1" });
+  const delta = (thinking: string) => ({
+    type: "stream_event",
+    event: { type: "content_block_delta", delta: { type: "thinking_delta", thinking } },
+  });
+  // Claude Code sends each finished content block as its own assistant
+  // message under the message's id, carrying only that block.
+  const block = (thinking: string) => ({
+    type: "assistant",
+    message: { id: "msg-1", role: "assistant", content: [{ type: "thinking", thinking }] },
+  });
+
+  try {
+    const items = [
+      { type: "stream_event", event: { type: "message_start", message: { id: "msg-1" } } },
+      delta("First thought. "),
+      block("First thought. "),
+      delta("Second thought."),
+      block("Second thought."),
+      { type: "stream_event", event: { type: "message_stop" } },
+    ].flatMap(consume);
+
+    expect(items).toEqual([
+      { type: "reasoning", text: "First thought. " },
+      { type: "reasoning", text: "Second thought." },
+    ]);
+  } finally {
+    await session.close();
+  }
+});
+
 test("waits for complete JSON values before updating tool input from input_json_delta", async () => {
   const session = await createSession();
   const internal: {
