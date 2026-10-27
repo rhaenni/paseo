@@ -1286,13 +1286,17 @@ class TimelineAssembler {
       .map((fragment) => fragment.text)
       .join("");
 
-    if (assistantText.length > 0) {
+    // Claude Code delivers a finished message one content block at a time,
+    // each as an assistant message carrying only that block, after the
+    // block's deltas. A block that already streamed is the tail of the
+    // accumulated text; replacing the text with it would emit it again.
+    if (assistantText.length > 0 && !state.assistantText.endsWith(assistantText)) {
       if (!assistantText.startsWith(state.assistantText)) {
         state.emittedAssistantLength = 0;
       }
       state.assistantText = assistantText;
     }
-    if (reasoningText.length > 0) {
+    if (reasoningText.length > 0 && !state.reasoningText.endsWith(reasoningText)) {
       if (!reasoningText.startsWith(state.reasoningText)) {
         state.emittedReasoningLength = 0;
       }
